@@ -1,0 +1,44 @@
+name: Publish the supplied official Wallpaper v25 APK
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ship-v25.yml']
+permissions: {}
+concurrency: byeolsatang-app-v25
+jobs:
+  publish:
+    if: github.repository == 'teapo86/byeolsatang-downloads'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Materialize and verify the supplied APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo=https://github.com/teapo86/byeolsatang-downloads
+          curl --fail --silent --show-error --location --retry 3 "$repo/releases/download/dragonball-v24/byeolsatang-v24.apk" -o previous.apk
+          echo '9a0159bf8f14c0b73ab63240d9c45659911a8a37b2df97633b0420a57a833bd0  previous.apk' | sha256sum -c
+          curl --fail --silent --show-error --location --retry 3 -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/teapo86/byeolsatang-downloads/git/blobs/61316c50879eb69b6ba089b296a979ead3cf4c1d' | jq -er '.content' | base64 -d > transfer.zst
+          echo 'c73ef1e7de685efa70c048b544ea1783685376d9e65e40eba552f09045735228  transfer.zst' | sha256sum -c
+          zstd -d --patch-from=previous.apk transfer.zst -o byeolsatang.apk
+          echo '11923e517cdf2ea8c62f8574eb7d63536cab5632f66a6c8b4ad4d08b43a256f5  byeolsatang.apk' | sha256sum -c
+      - name: Publish only byeolsatang.apk as the latest release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_COMMIT: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if ! gh release view app-v25 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create app-v25 byeolsatang.apk --repo "$GITHUB_REPOSITORY" --target "$RELEASE_COMMIT" --latest \
+              --title '별사탕 Wallpaper v25' \
+              --notes '건빵닷컴 공식 배포 버전입니다. 아래 Assets에서 byeolsatang.apk를 받아 설치하세요. 기존 사용자는 덮어 설치하면 드래곤볼 퀵패널과 풀세트를 앱에서 새 다운로드 주소로 받을 수 있어요.'
+          fi
+      - name: Verify the public subscriber link without login
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 4 --retry-all-errors 'https://github.com/teapo86/byeolsatang-downloads/releases/latest/download/byeolsatang.apk' -o public.apk
+          cmp byeolsatang.apk public.apk
